@@ -101,3 +101,23 @@ export async function getAllMembers() {
     });
   });
 }
+
+export async function borrowBookAction(payload: { member_id: number; book_id: number }) {
+  return new Promise((resolve, reject) => {
+    // Calls the rpc BorrowBook definition in library.proto symmetrically
+    client.BorrowBook(payload, (err: any, response: any) => {
+      if (err) reject(new Error(err.details || 'Failed to execute borrow checkout request.'));
+      else resolve(response);
+    });
+  });
+}
+
+export async function returnBookAction(payload: { member_id: number; book_id: number }) {
+  return new Promise((resolve, reject) => {
+    // Calls the rpc ReturnBook definition in library.proto
+    client.ReturnBook(payload, (err: any, response: any) => {
+      if (err) reject(new Error(err.details || 'Failed to process checkout return.'));
+      else resolve(response);
+    });
+  });
+}
