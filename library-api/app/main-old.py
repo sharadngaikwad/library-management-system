@@ -4,6 +4,10 @@ import sys
 import os
 from datetime import date
 import grpc_tools.protoc
+import library_pb2
+import library_pb2_grpc
+from app.database import SessionLocal, Base, engine
+from app import models
 
 # Dynamic generation of proto definitions to ensure runtime correctness
 proto_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../proto'))
@@ -16,11 +20,6 @@ grpc_tools.protoc.main((
     f'--grpc_python_out={proto_path}',
     os.path.join(proto_path, 'library.proto')
 ))
-
-import library_pb2
-import library_pb2_grpc
-from app.database import SessionLocal, Base, engine
-from app import models
 
 Base.metadata.create_all(bind=engine)
 

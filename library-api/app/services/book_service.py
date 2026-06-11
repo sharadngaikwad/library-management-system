@@ -1,0 +1,45 @@
+import grpc
+from app import models
+import library_pb2
+
+def get_all_books(db, request, context):
+    results = db.query(models.Book).order_by(
+        models.Book.title.asc(), 
+        models.Book.author.asc(), 
+        models.Book.id.asc()
+    ).all()
+    
+    protobuf_list = [
+        library_pb2.BookResponse(
+            id=b.id, title=b.title, author=b.author, isbn=b.isbn, available_copies=b.available_copies
+        ) for b in results
+    ]
+    return library_pb2.ListBooksResponse(books=protobuf_list)
+
+def create_new_book(db, request, context):
+    existing = db.query(models.Book).filter(models.Book.isbn == request.isbn).first()
+    if existing:
+        context.abort(grpc.StatusCode.ALREADY_EXISTS, "ISBN record already exists")
+    
+    book = models.Book(
+        title=request.title, author=request.author, isbn=request.isbn, available_copies=request.available_copies
+    )
+    db.add(book)
+    db.commit()
+    return library_pb2.BookResponse(
+        id=book.id, title=book.title, author=book.author, isbn=book.isbn, available_copies=book.available_copies
+    )
+
+def modify_book_record(db, request, context):
+    book = db.query(models.Book).filter(models.Book.id == request.id).first()
+    if not book:
+        context.abort(grpc.StatusCode.NOT_FOUND, "Target book matching ID not found")
+    
+    book.title = request.title
+    book.author = request.author
+    book.isbn = request.isbn
+    book.available_copies = request.available_copies
+    db.commit()
+    return library_pb2.BookResponse(
+        id=book.id, title=book.title, author=book.author, isbn=book.isbn, available_copies=book.available_copies
+    )
