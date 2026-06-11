@@ -26,6 +26,10 @@ CREATE TABLE IF NOT EXISTS operations (
 
 CREATE INDEX idx_operations_member ON operations(member_id);
 CREATE INDEX idx_operations_active_book ON operations(book_id) WHERE return_date IS NULL;
+-- Composite index for optimized multi-column sorting
+CREATE INDEX idx_books_title_author_id 
+ON books (title ASC, author ASC, id ASC);
+CREATE INDEX idx_members_name_id ON members (name ASC, id ASC);
 
 -- ============================================================================
 -- DATA SEEDING: 20 MEMEBERS

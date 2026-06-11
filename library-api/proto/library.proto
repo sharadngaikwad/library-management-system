@@ -5,7 +5,10 @@ package library;
 service LibraryService {
   rpc CreateBook (BookCreateRequest) returns (BookResponse);
   rpc UpdateBook (BookUpdateRequest) returns (BookResponse);
+  rpc ListBooks (EmptyRequest) returns (ListBooksResponse);
   rpc CreateMember (MemberCreateRequest) returns (MemberResponse);
+  rpc UpdateMember (MemberUpdateRequest) returns (MemberResponse);
+  rpc ListMembers (EmptyRequest) returns (ListMembersResponse);
   rpc BorrowBook (BorrowRequest) returns (OperationResponse);
   rpc ReturnBook (ReturnRequest) returns (ReturnResponse);
   rpc ListActiveLoans (ListLoansRequest) returns (ListLoansResponse);
@@ -38,6 +41,13 @@ message MemberCreateRequest {
   string name = 1;
   string email = 2;
   string phone = 3;
+}
+
+message MemberUpdateRequest {
+    int32 id = 1;
+    string name = 2;
+    string email = 3;
+    string phone = 4;
 }
 
 message MemberResponse {
@@ -78,4 +88,14 @@ message OperationResponse {
 
 message ListLoansResponse {
   repeated OperationResponse loans = 1;
+}
+
+message EmptyRequest {}
+
+message ListBooksResponse {
+    repeated BookResponse books = 1;
+}
+
+message ListMembersResponse {
+    repeated MemberResponse members = 1;
 }

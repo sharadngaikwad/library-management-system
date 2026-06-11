@@ -26,6 +26,7 @@ services:
       - "50051:50051"
     environment:
       - DATABASE_URL=postgresql://user:password@db:5432/library
+      - PYTHONPATH=/app
     depends_on:
       db:
         condition: service_healthy

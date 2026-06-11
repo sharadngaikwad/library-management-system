@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import CounterOperations from './CounterOperations';
+import BookManagement from './BookManagement';
+import MemberManagement from './MemberManagement';
 import { getActiveLoans } from './actions';
 
 export default function Home() {
@@ -105,16 +107,14 @@ export default function Home() {
       {currentTab === 'books' && (
         <div>
           <h2>Book Inventory Administration</h2>
-          <p style={{ color: '#666' }}>Placeholder: CRUD Panel for creating, indexing, and modifying library catalog profiles.</p>
-          {/* Future <BookManagement /> Component goes here */}
+          <BookManagement />
         </div>
       )}
 
       {currentTab === 'members' && (
         <div>
           <h2>Member Registry Administration</h2>
-          <p style={{ color: '#666' }}>Placeholder: CRUD Panel for archiving, registering, and adjusting library members profiles.</p>
-          {/* Future <MemberManagement /> Component goes here */}
+          <MemberManagement />
         </div>
       )}
 
