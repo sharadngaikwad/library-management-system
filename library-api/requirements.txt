@@ -3,3 +3,7 @@ grpcio-tools==1.64.1
 grpcio-reflection==1.64.1
 sqlalchemy==2.0.28
 psycopg2-binary==2.9.9
+
+# Test Dependencies
+pytest==8.2.2
+pytest-mock==3.14.0

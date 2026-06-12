@@ -69,7 +69,7 @@ python -m pytest app/services/ -s -v
 ## 1. Start the Containers
 
 ```cmd
-docker compose up -d
+docker compose up
 ```
 
 ## 2. Execute Pytest Inside the API Container

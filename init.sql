@@ -68,24 +68,24 @@ CREATE INDEX idx_members_name_id ON members (name ASC, id ASC);
 INSERT INTO members (id, name, email, phone) VALUES
 (1, 'Aarav Sharma', 'aarav.sharma@email.com', '9876543210'),
 (2, 'Diya Patel', 'diya.patel@email.com', '9812345678'),
-(3, 'James Smith', 'james.smith@email.com', '555-0101'),
-(4, 'Emma Johnson', 'emma.johnson@email.com', '555-0102'),
+(3, 'James Smith', 'james.smith@email.com', '9812345679'),
+(4, 'Emma Johnson', 'emma.johnson@email.com', '9812345680'),
 (5, 'Vihaan Gupta', 'vihaan.gupta@email.com', '9765432109'),
 (6, 'Ananya Iyer', 'ananya.iyer@email.com', '9654321098'),
-(7, 'Liam Brown', 'liam.brown@email.com', '555-0103'),
-(8, 'Olivia Jones', 'olivia.jones@email.com', '555-0104'),
+(7, 'Liam Brown', 'liam.brown@email.com', '9654321099'),
+(8, 'Olivia Jones', 'olivia.jones@email.com', '9654321100'),
 (9, 'Kabir Verma', 'kabir.verma@email.com', '9543210987'),
 (10, 'Meera Reddy', 'meera.reddy@email.com', '9432109876'),
-(11, 'Noah Miller', 'noah.miller@email.com', '555-0105'),
-(12, 'Ava Davis', 'ava.davis@email.com', '555-0106'),
+(11, 'Noah Miller', 'noah.miller@email.com', '9432109877'),
+(12, 'Ava Davis', 'ava.davis@email.com', '9432109878'),
 (13, 'Rohan Joshi', 'rohan.joshi@email.com', '9321098765'),
 (14, 'Sana Khan', 'sana.khan@email.com', '9210987654'),
-(15, 'Lucas Rodriguez', 'lucas.rod@email.com', '555-0107'),
-(16, 'Sophia Martinez', 'sophia.mtz@email.com', '555-0108'),
+(15, 'Lucas Rodriguez', 'lucas.rod@email.com', '9210987655'),
+(16, 'Sophia Martinez', 'sophia.mtz@email.com', '9210987656'),
 (17, 'Arjun Nair', 'arjun.nair@email.com', '9109876543'),
 (18, 'Isha Choudhury', 'isha.choud@email.com', '9019876542'),
-(19, 'Mason Wilson', 'mason.wilson@email.com', '555-0109'),
-(20, 'Isabella Anderson', 'isabella.and@email.com', '555-0110')
+(19, 'Mason Wilson', 'mason.wilson@email.com', '9019876543'),
+(20, 'Isabella Anderson', 'isabella.and@email.com', '9019876544')
 ON CONFLICT (email) DO NOTHING;
 
 -- Adjust sequence value to prevent auto-increment conflicts later
