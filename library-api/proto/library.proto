@@ -5,7 +5,7 @@ package library;
 service LibraryService {
   rpc CreateBook (BookCreateRequest) returns (BookResponse);
   rpc UpdateBook (BookUpdateRequest) returns (BookResponse);
-  rpc ListBooks (EmptyRequest) returns (ListBooksResponse);
+  rpc ListBooks (ListBooksRequest) returns (ListBooksResponse);
   
   rpc CreateMember (MemberCreateRequest) returns (MemberResponse);
   rpc UpdateMember (MemberUpdateRequest) returns (MemberResponse);
@@ -97,8 +97,14 @@ message ListLoansResponse {
 
 message EmptyRequest {}
 
+message ListBooksRequest {
+  int32 page = 1;       
+  int32 page_size = 2;  
+}
+
 message ListBooksResponse {
   repeated BookResponse books = 1;
+  int32 total_records = 2;
 }
 
 message ListMembersResponse {

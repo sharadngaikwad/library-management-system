@@ -3,23 +3,35 @@ from app import models
 import library_pb2
 
 def get_all_books(db, request, context):
-    results = db.query(models.Book).order_by(
-        models.Book.title.asc(), 
-        models.Book.author.asc(), 
-        models.Book.id.asc()
-    ).all()
+    # 1. Always query the total count first so the frontend knows how many pages exist
+    total_records = db.query(models.Book).count()
     
-    protobuf_list = [
-        library_pb2.BookResponse(
-            id=b.id, 
-            title=b.title, 
-            author=b.author, 
-            isbn=b.isbn, 
-            total_copies=b.total_copies, 
+    # 2. Build the base query
+    query = db.query(models.Book).order_by(models.Book.id.asc())
+    
+    # 3. Apply Pagination conditionally if parameters are provided
+    if request.page > 0 and request.page_size > 0:
+        offset_value = (request.page - 1) * request.page_size
+        query = query.limit(request.page_size).offset(offset_value)
+    
+    books = query.all()
+    
+    # 4. Map to protobuf structure
+    proto_books = []
+    for b in books:
+        proto_books.append(library_pb2.BookResponse(
+            id=b.id,
+            title=b.title,
+            author=b.author,
+            isbn=b.isbn,
+            total_copies=b.total_copies,
             available_copies=b.available_copies
-        ) for b in results
-    ]
-    return library_pb2.ListBooksResponse(books=protobuf_list)
+        ))
+        
+    return library_pb2.ListBooksResponse(
+        books=proto_books,
+        total_records=total_records
+    )
 
 def create_new_book(db, request, context):
     existing = db.query(models.Book).filter(models.Book.isbn == request.isbn).first()

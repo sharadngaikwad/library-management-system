@@ -35,11 +35,11 @@ export default function CounterOperations({ onRefresh }: CounterOperationsProps)
   const loadSelectionLists = async () => {
     try {
       setLoadingData(true);
-      const [fetchedBooks, fetchedMembers] = await Promise.all([
+      const [fetchedBooksResponse, fetchedMembers] = await Promise.all([
         getAllBooks(),
         getAllMembers()
       ]);
-      setBooks((fetchedBooks || []) as Book[]);
+      setBooks(((fetchedBooksResponse as any)?.books || []) as Book[]);
       setMembers((fetchedMembers || []) as Member[]);
     } catch (err: any) {
       setErrorMessage('Failed to pre-populate selection dropdown data.');

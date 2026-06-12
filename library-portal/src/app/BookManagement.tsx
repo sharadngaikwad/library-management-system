@@ -12,10 +12,20 @@ interface Book {
   available_copies: number;
 }
 
+interface FetchBooksResponse {
+  books: Book[];
+  totalRecords: number;
+}
+
 export default function BookManagement() {
   const [books, setBooks] = useState<Book[]>([]);
   const [loading, setLoading] = useState(true);
   
+  // --- SERVER-SIDE PAGINATION STATES ---
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10); 
+  const [totalRecords, setTotalRecords] = useState(0);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBook, setEditingBook] = useState<Book | null>(null);
   
@@ -27,14 +37,32 @@ export default function BookManagement() {
   const [errorMessage, setErrorMessage] = useState('');
 
   const loadBooks = async () => {
-    const data = await getAllBooks();
-    setBooks(data as Book[]);
-    setLoading(false);
+    setLoading(true);
+    try {
+      const response = (await getAllBooks({ 
+        page: currentPage, 
+        pageSize: itemsPerPage 
+      })) as FetchBooksResponse;
+
+      setBooks(response.books || []);
+      setTotalRecords(response.totalRecords || 0);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to sync dataset rows from backend.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     loadBooks();
-  }, []);
+  }, [currentPage, itemsPerPage]);
+
+  const totalPages = Math.ceil(totalRecords / itemsPerPage);
+
+  const handlePageSizeChange = (newSize: number) => {
+    setItemsPerPage(newSize);
+    setCurrentPage(1); 
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,17 +84,15 @@ export default function BookManagement() {
 
     try {
       if (editingBook && editingBook.id) {
-        // While editing, we pass the total copies. The backend handles the rest.
         await updateBookAction({
           id: editingBook.id,
           title: cleanTitle,
           author: cleanAuthor,
           isbn: cleanIsbn, 
           total_copies: totalCopies,
-          available_copies: availableCopies // Stays consistent with what was loaded
+          available_copies: availableCopies 
         });
       } else {
-        // While creating, available_copies is guaranteed to match total_copies
         await createBookAction({
           title: cleanTitle,
           author: cleanAuthor,
@@ -77,7 +103,7 @@ export default function BookManagement() {
       }
 
       setIsModalOpen(false);
-      setLoading(true);
+      if (!editingBook) setCurrentPage(1); 
       await loadBooks();
     } catch (err: any) {
       setErrorMessage(err.message || 'An error occurred while saving the profile.');
@@ -90,7 +116,7 @@ export default function BookManagement() {
     setAuthor('');
     setIsbn('');
     setTotalCopies(1);
-    setAvailableCopies(1); // Default matches total
+    setAvailableCopies(1); 
     setErrorMessage('');
     setIsModalOpen(true);
   };
@@ -101,17 +127,51 @@ export default function BookManagement() {
     setAuthor(book.author);
     setIsbn(book.isbn);
     setTotalCopies(book.total_copies);
-    setAvailableCopies(book.available_copies); // Lock in current system stock
+    setAvailableCopies(book.available_copies); 
     setErrorMessage('');
     setIsModalOpen(true);
   };
 
-  if (loading && books.length === 0) return <p style={{ color: 'var(--text-dark)' }}>Loading catalog data...</p>;
+  // --- SLIDING WINDOW PAGINATION LOGIC ---
+  const getPaginationPageNumbers = () => {
+    const pageNumbers: (number | string)[] = [];
+    const maxVisibleNeighbors = 1; // Number of pages to show before and after current page
+
+    if (totalPages <= 5) {
+      // If total pages are small, render all numbers directly
+      for (let i = 1; i <= totalPages; i++) pageNumbers.push(i);
+    } else {
+      // Always include the very first page
+      pageNumbers.push(1);
+
+      const startPage = Math.max(2, currentPage - maxVisibleNeighbors);
+      const endPage = Math.min(totalPages - 1, currentPage + maxVisibleNeighbors);
+
+      if (startPage > 2) {
+        pageNumbers.push('...');
+      }
+
+      for (let i = startPage; i <= endPage; i++) {
+        pageNumbers.push(i);
+      }
+
+      if (endPage < totalPages - 1) {
+        pageNumbers.push('...');
+      }
+
+      // Always include the very last page
+      pageNumbers.push(totalPages);
+    }
+
+    return pageNumbers;
+  };
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <h3 style={{ margin: 0, color: 'var(--text-dark)' }}>Catalog Collection ({books.length})</h3>
+        <h3 style={{ margin: 0, color: 'var(--text-dark)' }}>
+          Catalog Collection ({totalRecords} total books)
+        </h3>
         <button onClick={openAddModal} style={{ 
           padding: '8px 12px', background: 'var(--saffron-primary, #FF6600)', 
           color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' 
@@ -120,79 +180,195 @@ export default function BookManagement() {
         </button>
       </div>
 
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', color: 'var(--text-dark)' }}>
-          <thead>
-            <tr style={{ background: 'var(--progress-bg, rgba(0, 0, 0, 0.05))', borderBottom: '2px solid var(--saffron-border, #ccc)', textAlign: 'left' }}>
-              <th style={{ padding: '12px 10px' }}>Title</th>
-              <th style={{ padding: '12px 10px' }}>ISBN</th>
-              <th style={{ padding: '12px 10px' }}>Book ID</th>
-              <th style={{ padding: '12px 10px' }}>Stock Inventory Status</th>
-              <th style={{ padding: '12px 10px', textAlign: 'center' }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {books.map((book) => (
-              <tr key={book.id} style={{ borderBottom: '1px solid var(--progress-bg, #eee)' }}>
-                <td style={{ padding: '12px 10px' }}>
-                  <div style={{ fontWeight: 'bold' }}>{book.title}</div>
-                  <div style={{ fontSize: '13px', color: 'var(--text-muted, #666)' }}>by {book.author}</div>
-                </td>
-                <td style={{ padding: '12px 10px', fontFamily: 'monospace', fontSize: '14px' }}>{book.isbn}</td>
-                <td style={{ padding: '12px 10px', color: 'var(--text-muted, #666)' }}>#{book.id}</td>
-                <td style={{ padding: '12px 10px' }}>
-                  <span style={{ 
-                    background: book.available_copies > 0 ? 'var(--success-border, rgba(46, 125, 50, 0.15))' : 'var(--warning-border, rgba(211, 47, 47, 0.15))',
-                    color: book.available_copies > 0 ? 'var(--success-green, #2e7d32)' : 'var(--warning-red, #d32f2f)',
-                    padding: '6px 10px', borderRadius: '4px', fontSize: '13px', fontWeight: 'bold', display: 'inline-block'
-                  }}>
-                    {book.available_copies} / {book.total_copies} available
-                  </span>
-                </td>
-                <td style={{ padding: '12px 10px', textAlign: 'center' }}>
-                  <button onClick={() => openEditModal(book)} style={{
-                    padding: '6px 12px', background: 'transparent', border: '1px solid var(--saffron-primary, #FF6600)',
-                    color: 'var(--saffron-primary, #FF6600)', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px'
-                  }}>
-                    Modify Profile
-                  </button>
-                </td>
+      <div style={{ overflowX: 'auto', minHeight: '200px', position: 'relative' }}>
+        {loading ? (
+          <p style={{ color: 'var(--text-dark)', padding: '20px' }}>Loading catalog window view entries...</p>
+        ) : books.length === 0 ? (
+          <p style={{ color: 'var(--text-muted, #777)', padding: '20px', textAlign: 'center' }}>No catalog profiles mapped to this parameters slice window.</p>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', color: 'var(--text-dark)' }}>
+            <thead>
+              <tr style={{ background: 'var(--progress-bg, rgba(0, 0, 0, 0.05))', borderBottom: '2px solid var(--saffron-border, #ccc)', textAlign: 'left' }}>
+                <th style={{ padding: '12px 10px' }}>Title</th>
+                <th style={{ padding: '12px 10px' }}>ISBN</th>
+                <th style={{ padding: '12px 10px' }}>Book ID</th>
+                <th style={{ padding: '12px 10px' }}>Stock Inventory Status</th>
+                <th style={{ padding: '12px 10px', textAlign: 'center' }}>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {books.map((book) => (
+                <tr key={book.id} style={{ borderBottom: '1px solid var(--progress-bg, #eee)' }}>
+                  <td style={{ padding: '12px 10px' }}>
+                    <div style={{ fontWeight: 'bold' }}>{book.title}</div>
+                    <div style={{ fontSize: '13px', color: 'var(--text-muted, #666)' }}>by {book.author}</div>
+                  </td>
+                  <td style={{ padding: '12px 10px', fontFamily: 'monospace', fontSize: '14px' }}>{book.isbn}</td>
+                  <td style={{ padding: '12px 10px', color: 'var(--text-muted, #666)' }}>#{book.id}</td>
+                  <td style={{ padding: '12px 10px' }}>
+                    <span style={{ 
+                      background: book.available_copies > 0 ? 'var(--success-border, rgba(46, 125, 50, 0.15))' : 'var(--warning-border, rgba(211, 47, 47, 0.15))',
+                      color: book.available_copies > 0 ? 'var(--success-green, #2e7d32)' : 'var(--warning-red, #d32f2f)',
+                      padding: '6px 10px', borderRadius: '4px', fontSize: '13px', fontWeight: 'bold', display: 'inline-block'
+                    }}>
+                      {book.available_copies} / {book.total_copies} available
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px 10px', textAlign: 'center' }}>
+                    <button onClick={() => openEditModal(book)} style={{
+                      padding: '6px 12px', background: 'transparent', border: '1px solid var(--saffron-primary, #FF6600)',
+                      color: 'var(--saffron-primary, #FF6600)', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px'
+                    }}>
+                      Modify Profile
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
+      {/* --- SERVER SIDE PAGINATION CONTROL FOOTER BLOCK --- */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        marginTop: '20px', 
+        flexWrap: 'wrap',
+        gap: '12px'
+      }}>
+        {/* Dropdown Page Size Selector */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--text-dark)' }}>
+          <span>Show rows per page:</span>
+          <select 
+            value={itemsPerPage} 
+            onChange={e => handlePageSizeChange(Number(e.target.value))}
+            style={{
+              padding: '6px 8px',
+              borderRadius: '4px',
+              border: '1px solid var(--saffron-border, #ccc)',
+              background: 'var(--progress-bg, #fff)',
+              color: 'var(--text-dark)',
+              cursor: 'pointer',
+              fontWeight: 'bold'
+            }}
+          >
+            <option value={5} style={{ background: 'var(--progress-bg, #fff)', color: 'var(--text-dark)' }}>5</option>
+            <option value={10} style={{ background: 'var(--progress-bg, #fff)', color: 'var(--text-dark)' }}>10</option>
+            <option value={25} style={{ background: 'var(--progress-bg, #fff)', color: 'var(--text-dark)' }}>25</option>
+            <option value={50} style={{ background: 'var(--progress-bg, #fff)', color: 'var(--text-dark)' }}>50</option>
+          </select>
+        </div>
+
+        {/* Dynamic Buttons Engine Layout Router */}
+        {totalPages > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button 
+              disabled={currentPage === 1 || loading}
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              style={{ 
+                padding: '6px 12px', 
+                borderRadius: '4px', 
+                border: '1px solid var(--saffron-border, #ccc)', 
+                background: 'var(--progress-bg, #fff)',
+                color: 'var(--text-dark)',
+                cursor: (currentPage === 1 || loading) ? 'not-allowed' : 'pointer', 
+                opacity: (currentPage === 1 || loading) ? 0.4 : 1 
+              }}
+            >
+              « Prev
+            </button>
+            
+            {getPaginationPageNumbers().map((page, index) => {
+              if (page === '...') {
+                return (
+                  <span 
+                    key={`ellipsis-${index}`} 
+                    style={{ padding: '6px 8px', color: 'var(--text-muted, #666)', fontSize: '14px' }}
+                  >
+                    ...
+                  </span>
+                );
+              }
+
+              const isCurrent = currentPage === page;
+              return (
+                <button
+                  key={`page-${page}`}
+                  disabled={loading}
+                  onClick={() => setCurrentPage(page as number)}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    border: '1px solid var(--saffron-primary, #FF6600)',
+                    background: isCurrent ? 'var(--saffron-primary, #FF6600)' : 'var(--progress-bg, #fff)',
+                    color: isCurrent ? '#fff' : 'var(--text-dark)',
+                    fontWeight: 'bold',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    opacity: loading ? 0.7 : 1
+                  }}
+                >
+                  {page}
+                </button>
+              );
+            })}
+
+            <button 
+              disabled={currentPage === totalPages || loading}
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              style={{ 
+                padding: '6px 12px', 
+                borderRadius: '4px', 
+                border: '1px solid var(--saffron-border, #ccc)', 
+                background: 'var(--progress-bg, #fff)',
+                color: 'var(--text-dark)',
+                cursor: (currentPage === totalPages || loading) ? 'not-allowed' : 'pointer', 
+                opacity: (currentPage === totalPages || loading) ? 0.4 : 1 
+              }}
+            >
+              Next »
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* OVERLAY PROFILE MODAL */}
       {isModalOpen && (
         <div style={{
           position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-          background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000
+          background: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000
         }}>
           <div style={{
-            background: '#fff', color: 'var(--text-dark, #333)',
-            padding: '24px', borderRadius: '8px', width: '100%', maxWidth: '450px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+            background: 'var(--progress-bg, #fff)', 
+            color: 'var(--text-dark, #333)',
+            padding: '24px', borderRadius: '8px', width: '100%', maxWidth: '450px', 
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            border: '1px solid var(--saffron-border, #ccc)'
           }}>
-            <h3 style={{ marginTop: 0, marginBottom: '16px' }}>{editingBook ? 'Modify Book Profile' : 'Catalog New Inventory'}</h3>
+            <h3 style={{ marginTop: 0, marginBottom: '16px', color: 'var(--text-dark)' }}>
+              {editingBook ? 'Modify Book Profile' : 'Catalog New Inventory'}
+            </h3>
             
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '4px' }}>Book Title *</label>
-                <input type="text" value={title} onChange={e => setTitle(e.target.value)} style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }} />
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--text-dark)' }}>Book Title *</label>
+                <input type="text" value={title} onChange={e => setTitle(e.target.value)} style={{ width: '100%', padding: '8px', boxSizing: 'border-box', background: 'var(--progress-bg, #fff)', color: 'var(--text-dark)', border: '1px solid var(--saffron-border, #ccc)', borderRadius: '4px' }} />
               </div>
               
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '4px' }}>Author Name *</label>
-                <input type="text" value={author} onChange={e => setAuthor(e.target.value)} style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }} />
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--text-dark)' }}>Author Name *</label>
+                <input type="text" value={author} onChange={e => setAuthor(e.target.value)} style={{ width: '100%', padding: '8px', boxSizing: 'border-box', background: 'var(--progress-bg, #fff)', color: 'var(--text-dark)', border: '1px solid var(--saffron-border, #ccc)', borderRadius: '4px' }} />
               </div>
               
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '4px' }}>ISBN Identification *</label>
-                <input type="text" value={isbn} onChange={e => setIsbn(e.target.value)} disabled={!!editingBook} style={{ width: '100%', padding: '8px', boxSizing: 'border-box', background: editingBook ? '#eee' : 'inherit', cursor: editingBook ? 'not-allowed' : 'text' }} />
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--text-dark)' }}>ISBN Identification *</label>
+                <input type="text" value={isbn} onChange={e => setIsbn(e.target.value)} disabled={!!editingBook} style={{ width: '100%', padding: '8px', boxSizing: 'border-box', background: editingBook ? 'rgba(0,0,0,0.1)' : 'var(--progress-bg, #fff)', color: 'var(--text-dark)', border: '1px solid var(--saffron-border, #ccc)', borderRadius: '4px', cursor: editingBook ? 'not-allowed' : 'text' }} />
               </div>
               
               <div style={{ display: 'flex', gap: '12px' }}>
                 <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '4px' }}>Total Owned Copies</label>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--text-dark)' }}>Total Owned Copies</label>
                   <input 
                     type="number" 
                     min="0" 
@@ -200,30 +376,30 @@ export default function BookManagement() {
                     onChange={e => {
                       const val = Number(e.target.value);
                       setTotalCopies(val);
-                      // Automatic Sync: While adding a new record, live available copies matches total copies
                       if (!editingBook) {
                         setAvailableCopies(val);
                       }
                     }} 
-                    style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }} 
+                    style={{ width: '100%', padding: '8px', boxSizing: 'border-box', background: 'var(--progress-bg, #fff)', color: 'var(--text-dark)', border: '1px solid var(--saffron-border, #ccc)', borderRadius: '4px' }} 
                   />
                 </div>
 
                 <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '4px', color: '#666' }}>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--text-muted)' }}>
                     Available Stock
                   </label>
                   <input 
                     type="number" 
-                    disabled={true} // ALWAYS disabled per instructions to prevent user manipulation mismatch
+                    disabled={true} 
                     value={availableCopies} 
                     style={{ 
                       width: '100%', 
                       padding: '8px', 
                       boxSizing: 'border-box', 
-                      background: '#f5f5f5', 
-                      color: '#777', 
-                      border: '1px solid #ddd', 
+                      background: 'rgba(0,0,0,0.08)', 
+                      color: 'var(--text-muted)', 
+                      border: '1px solid var(--saffron-border, #ccc)', 
+                      borderRadius: '4px',
                       cursor: 'not-allowed' 
                     }} 
                   />
@@ -233,7 +409,7 @@ export default function BookManagement() {
               {errorMessage && <p style={{ color: 'var(--warning-red, #d32f2f)', margin: 0, fontSize: '14px', fontWeight: 'bold' }}>{errorMessage}</p>}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px' }}>
-                <button type="button" onClick={() => setIsModalOpen(false)} style={{ padding: '8px 14px', background: 'transparent', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}>
+                <button type="button" onClick={() => setIsModalOpen(false)} style={{ padding: '8px 14px', background: 'transparent', border: '1px solid var(--saffron-border, #ccc)', color: 'var(--text-dark)', borderRadius: '4px', cursor: 'pointer' }}>
                   Cancel
                 </button>
                 <button type="submit" style={{ padding: '8px 14px', background: 'var(--saffron-primary, #FF6600)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>

@@ -15,6 +15,11 @@ const client = new libraryProto.LibraryService(
   grpc.credentials.createInsecure()
 );
 
+interface GetBooksParams {
+  page?: number;
+  pageSize?: number;
+}
+
 export async function createBookAction(bookData: { title: string; author: string; isbn: string; total_copies: number; available_copies: number }) {
   return new Promise((resolve, reject) => {
     client.CreateBook(bookData, (err: any, response: any) => {
@@ -76,15 +81,24 @@ export async function getActiveLoans(memberId: number) {
   });
 }
 
-export async function getAllBooks() {
-  return new Promise((resolve) => {
-    // EmptyRequest payload {} matches your .proto definition
-    client.ListBooks({}, (err: any, response: any) => {
-      if (err || !response.books) {
-        resolve([]);
-      } else {
-        resolve(response.books);
+export async function getAllBooks(params?: GetBooksParams) {
+  return new Promise((resolve, reject) => {
+    // If no params are passed, they default to 0, matching our backend "return all" logic
+    const request = {
+      page: params?.page || 0,
+      page_size: params?.pageSize || 0
+    };
+
+    client.ListBooks(request, (err: any, response: any) => {
+      if (err) {
+        return reject(new Error(err.message || 'Failed to fetch catalog.'));
       }
+      
+      // Return both the paginated dataset and the total record block count
+      resolve({
+        books: response.books || [],
+        totalRecords: response.total_records || 0
+      });
     });
   });
 }
