@@ -4,20 +4,36 @@ import { useEffect, useState } from 'react';
 import CounterOperations from './CounterOperations';
 import { getActiveLoans, returnBookAction } from './actions';
 
+interface FetchLoansResponse {
+  loans: any[];
+  totalRecords: number;
+}
+
 export default function CirculationDesk() {
-  const [loans, setLoans] = useState([]);
+  const [loans, setLoans] = useState<any[]>([]);
   const [searchId, setSearchId] = useState('0');
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<number | null>(null);
   const [validationError, setValidationError] = useState('');
 
+  // --- SERVER-SIDE PAGINATION STATES ---
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [totalRecords, setTotalRecords] = useState(0);
+
   const [returnTargetLoan, setReturnTargetLoan] = useState<any | null>(null);
 
-  const refreshLoans = async (targetId: string) => {
+  const refreshLoans = async (targetId: string, pageNum = currentPage) => {
     setLoading(true);
     try {
-      const list = await getActiveLoans(Number(targetId));
-      setLoans(list as any);
+      const response = (await getActiveLoans(
+        Number(targetId),
+        pageNum,
+        itemsPerPage
+      )) as FetchLoansResponse;
+
+      setLoans(response.loans || []);
+      setTotalRecords(response.totalRecords || 0);
     } catch (err) {
       console.error("Failed fetching loan manifests:", err);
     } finally {
@@ -25,21 +41,27 @@ export default function CirculationDesk() {
     }
   };
 
+  // Trigger automated data refreshing hook cycles on dependency changes
   useEffect(() => {
-    refreshLoans(searchId);
-  }, [searchId]);
+    refreshLoans(searchId, currentPage);
+  }, [searchId, currentPage, itemsPerPage]);
 
-  // Step 1: Open custom confirmation overlay
+  const totalPages = Math.ceil(totalRecords / itemsPerPage) || 1;
+
+  const handlePageSizeChange = (newSize: number) => {
+    setItemsPerPage(newSize);
+    setCurrentPage(1); // Reset boundary window safely
+  };
+
   const handleOpenReturnConfirm = (loan: any) => {
     setReturnTargetLoan(loan);
   };
 
-  // Step 2: Dispatch mutation to gRPC network layer on user confirmation
   const handleCommitReturn = async () => {
     if (!returnTargetLoan) return;
 
     const loanToProcess = returnTargetLoan;
-    setReturnTargetLoan(null); // Close modal instantly
+    setReturnTargetLoan(null); 
     setProcessingId(loanToProcess.id);
     
     try {
@@ -48,7 +70,8 @@ export default function CirculationDesk() {
         book_id: loanToProcess.book_id
       });
       
-      await refreshLoans(searchId); // Pull clean dataset from database
+      // Refresh current page dataset parameters
+      await refreshLoans(searchId); 
     } catch (err: any) {
       alert(err.message || "An unexpected error occurred during return processing.");
     } finally {
@@ -66,14 +89,39 @@ export default function CirculationDesk() {
 
     const cleanId = val.trim() === '' ? '0' : val;
     setSearchId(cleanId);
+    setCurrentPage(1); // Reset to page 1 on search change
+  };
+
+  // --- SLIDING WINDOW PAGINATION LOGIC ---
+  const getPaginationPageNumbers = () => {
+    const pageNumbers: (number | string)[] = [];
+    const maxVisibleNeighbors = 1; 
+
+    if (totalPages <= 5) {
+      for (let i = 1; i <= totalPages; i++) pageNumbers.push(i);
+    } else {
+      pageNumbers.push(1);
+
+      const startPage = Math.max(2, currentPage - maxVisibleNeighbors);
+      const endPage = Math.min(totalPages - 1, currentPage + maxVisibleNeighbors);
+
+      if (startPage > 2) pageNumbers.push('...');
+
+      for (let i = startPage; i <= endPage; i++) {
+        pageNumbers.push(i);
+      }
+
+      if (endPage < totalPages - 1) pageNumbers.push('...');
+
+      pageNumbers.push(totalPages);
+    }
+
+    return pageNumbers;
   };
 
   return (
     <div>
-      {/* This calls refreshLoans securely. 
-        Ensure CounterOperations accepts the typed props definition block! 
-      */}
-      <CounterOperations onRefresh={() => refreshLoans(searchId)} />
+      <CounterOperations onRefresh={() => refreshLoans(searchId, 1)} />
       
       <div style={{ marginTop: '30px' }}>
         <div style={{ 
@@ -84,7 +132,9 @@ export default function CirculationDesk() {
           marginBottom: '12px',
           flexWrap: 'wrap'
         }}>
-          <h3 style={{ margin: 0, color: 'var(--text-dark)' }}>Active Outstanding Loans</h3>
+          <h3 style={{ margin: 0, color: 'var(--text-dark)' }}>
+            Active Outstanding Loans ({totalRecords} items matched)
+          </h3>
           
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
             <input 
@@ -110,12 +160,23 @@ export default function CirculationDesk() {
           </div>
         </div>
         
-        {loading && loans.length === 0 ? (
-          <p style={{ color: 'var(--text-muted)' }}>Loading active distributions...</p>
-        ) : loans.length === 0 ? (
-          <p style={{ color: 'var(--text-muted)' }}>No active operations registered.</p>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
+        {/* Isolated loading viewport to prevent drop out flickering effects */}
+        <div style={{ overflowX: 'auto', minHeight: '240px', position: 'relative' }}>
+          {loading && (
+            <div style={{
+              position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+              background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(1px)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10
+            }}>
+              <p style={{ color: 'var(--text-dark)', fontWeight: 'bold', background: 'var(--progress-bg, #eee)', padding: '8px 16px', borderRadius: '4px' }}>
+                Fetching Row Matrices...
+              </p>
+            </div>
+          )}
+
+          {loans.length === 0 && !loading ? (
+            <p style={{ color: 'var(--text-muted)', padding: '40px 0', textAlign: 'center' }}>No active operations registered.</p>
+          ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', color: 'var(--text-dark)' }}>
               <thead>
                 <tr style={{ 
@@ -132,7 +193,7 @@ export default function CirculationDesk() {
               </thead>
               <tbody>
                 {loans.map((loan: any) => (
-                  <tr key={loan.id} style={{ borderBottom: '1px solid var(--progress-bg, #eee)' }}>
+                  <tr key={loan.id} style={{ borderBottom: '1px solid var(--progress-bg, #eee)', opacity: loading ? 0.5 : 1 }}>
                     <td style={{ padding: '12px 10px', fontWeight: 'bold' }}>
                       {loan.member?.name} 
                       <span style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 'normal' }}>
@@ -154,14 +215,14 @@ export default function CirculationDesk() {
                     <td style={{ padding: '12px 10px', textAlign: 'center' }}>
                       <button 
                         onClick={() => handleOpenReturnConfirm(loan)}
-                        disabled={processingId === loan.id}
+                        disabled={processingId === loan.id || loading}
                         style={{
                           padding: '6px 12px', 
                           background: 'transparent', 
                           border: '1px solid var(--warning-red, #d32f2f)',
                           color: 'var(--warning-red, #d32f2f)', 
                           borderRadius: '4px', 
-                          cursor: 'pointer', 
+                          cursor: (processingId === loan.id || loading) ? 'not-allowed' : 'pointer', 
                           fontWeight: 'bold', 
                           fontSize: '13px',
                           opacity: processingId === loan.id ? 0.5 : 1
@@ -174,11 +235,106 @@ export default function CirculationDesk() {
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* Symmetrical Check-In Return Confirmation Modal Overlay */}
+      {/* --- REUSABLE CONTROL PANEL FOOTER --- */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        marginTop: '20px', 
+        flexWrap: 'wrap',
+        gap: '12px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--text-dark)' }}>
+          <span>Show rows per page:</span>
+          <select 
+            value={itemsPerPage} 
+            onChange={e => handlePageSizeChange(Number(e.target.value))}
+            style={{
+              padding: '6px 8px',
+              borderRadius: '4px',
+              border: '1px solid var(--saffron-border, #ccc)',
+              background: 'var(--progress-bg, #fff)',
+              color: 'var(--text-dark)',
+              cursor: 'pointer',
+              fontWeight: 'bold'
+            }}
+          >
+            <option value={5}>5</option>
+            <option value={10}>10</option>
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+          </select>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button 
+            disabled={currentPage === 1}
+            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+            style={{ 
+              padding: '6px 12px', 
+              borderRadius: '4px', 
+              border: '1px solid var(--saffron-border, #ccc)', 
+              background: 'var(--progress-bg, #fff)',
+              color: 'var(--text-dark)',
+              cursor: (currentPage === 1) ? 'not-allowed' : 'pointer', 
+              opacity: (currentPage === 1) ? 0.4 : 1 
+            }}
+          >
+            « Prev
+          </button>
+          
+          {getPaginationPageNumbers().map((page, index) => {
+            if (page === '...') {
+              return (
+                <span key={`ellipsis-${index}`} style={{ padding: '6px 8px', color: 'var(--text-muted)', fontSize: '14px' }}>
+                  ...
+                </span>
+              );
+            }
+
+            const isCurrent = currentPage === page;
+            return (
+              <button
+                key={`page-${page}`}
+                onClick={() => setCurrentPage(page as number)}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '4px',
+                  border: '1px solid var(--saffron-primary, #FF6600)',
+                  background: isCurrent ? 'var(--saffron-primary, #FF6600)' : 'var(--progress-bg, #fff)',
+                  color: isCurrent ? '#fff' : 'var(--text-dark)',
+                  fontWeight: 'bold',
+                  cursor: 'pointer'
+                }}
+              >
+                {page}
+              </button>
+            );
+          })}
+
+          <button 
+            disabled={currentPage === totalPages || totalRecords === 0}
+            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+            style={{ 
+              padding: '6px 12px', 
+              borderRadius: '4px', 
+              border: '1px solid var(--saffron-border, #ccc)', 
+              background: 'var(--progress-bg, #fff)',
+              color: 'var(--text-dark)',
+              cursor: (currentPage === totalPages || totalRecords === 0) ? 'not-allowed' : 'pointer', 
+              opacity: (currentPage === totalPages || totalRecords === 0) ? 0.4 : 1 
+            }}
+          >
+            Next »
+          </button>
+        </div>
+      </div>
+
+      {/* OVERLAY RETURN CONFIRMATION MODAL */}
       {returnTargetLoan && (
         <div style={{
           position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',

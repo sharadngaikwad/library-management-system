@@ -76,10 +76,6 @@ message ReturnResponse {
   string message = 1;
 }
 
-message ListLoansRequest {
-  int32 member_id = 1; 
-}
-
 message OperationResponse {
   int32 id = 1;
   int32 member_id = 2;
@@ -91,8 +87,15 @@ message OperationResponse {
   MemberResponse member = 8;
 }
 
+message ListLoansRequest {
+  int32 member_id = 1; 
+  int32 page = 2;
+  int32 page_size = 3;
+}
+
 message ListLoansResponse {
   repeated OperationResponse loans = 1;
+  int32 total_records = 2;
 }
 
 message EmptyRequest {}

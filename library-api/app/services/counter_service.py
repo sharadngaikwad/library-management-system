@@ -71,11 +71,23 @@ def execute_return_transaction(db, request, context):
     return library_pb2.ReturnResponse(message="Book checked in and processed successfully.")
 
 def get_active_loans_list(db, request, context):
+    # Base filtering parameters layout config mapping
     query = db.query(models.Operation).filter(models.Operation.return_date == None)
+    
     if request.member_id > 0:
         query = query.filter(models.Operation.member_id == request.member_id)
+        
+    # 1. Compute aggregate matches count before slicing the result window
+    total_records = query.count()
     
-    results = query.all()
+    # 2. Extract, sanitize, and validate incoming pagination inputs
+    page = max(1, request.page)
+    page_size = request.page_size if request.page_size > 0 else 10
+    offset_value = (page - 1) * page_size
+    
+    # 3. Pull sliced record segment window
+    results = query.offset(offset_value).limit(page_size).all()
+    
     protobuf_list = [
         library_pb2.OperationResponse(
             id=op.id, member_id=op.member_id, book_id=op.book_id,
@@ -84,4 +96,9 @@ def get_active_loans_list(db, request, context):
             member=library_pb2.MemberResponse(id=op.member.id, name=op.member.name, email=op.member.email)
         ) for op in results
     ]
-    return library_pb2.ListLoansResponse(loans=protobuf_list)
+    
+    # 4. Return both the data array slice and overall count tracker
+    return library_pb2.ListLoansResponse(
+        loans=protobuf_list,
+        total_records=total_records
+    )

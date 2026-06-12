@@ -79,13 +79,22 @@ export async function executeOperation(action: 'borrow' | 'return', memberId: nu
   });
 }
 
-export async function getActiveLoans(memberId: number) {
+export async function getActiveLoans(memberId: number, page: number, pageSize: number) {
   return new Promise((resolve) => {
-    client.ListActiveLoans({ member_id: memberId }, (err: any, response: any) => {
-      if (err || !response.loans) {
-        resolve([]);
+    const payload = { 
+      member_id: memberId, 
+      page: page, 
+      page_size: pageSize 
+    };
+
+    client.ListActiveLoans(payload, (err: any, response: any) => {
+      if (err) {
+        resolve({ loans: [], totalRecords: 0 });
       } else {
-        resolve(response.loans);
+        resolve({
+          loans: response.loans || [],
+          totalRecords: response.total_records || 0
+        });
       }
     });
   });
