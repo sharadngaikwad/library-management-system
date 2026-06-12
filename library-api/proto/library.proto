@@ -9,7 +9,7 @@ service LibraryService {
   
   rpc CreateMember (MemberCreateRequest) returns (MemberResponse);
   rpc UpdateMember (MemberUpdateRequest) returns (MemberResponse);
-  rpc ListMembers (EmptyRequest) returns (ListMembersResponse);
+  rpc ListMembers (ListMembersRequest) returns (ListMembersResponse);
   
   rpc BorrowBook (BorrowRequest) returns (OperationResponse);
   rpc ReturnBook (ReturnRequest) returns (ReturnResponse);
@@ -107,6 +107,12 @@ message ListBooksResponse {
   int32 total_records = 2;
 }
 
+message ListMembersRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+}
+
 message ListMembersResponse {
   repeated MemberResponse members = 1;
+  int32 total_records = 2;
 }

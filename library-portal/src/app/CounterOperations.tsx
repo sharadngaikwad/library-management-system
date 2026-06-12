@@ -35,12 +35,18 @@ export default function CounterOperations({ onRefresh }: CounterOperationsProps)
   const loadSelectionLists = async () => {
     try {
       setLoadingData(true);
-      const [fetchedBooksResponse, fetchedMembers] = await Promise.all([
-        getAllBooks(),
-        getAllMembers()
+      
+      // Request a high maximum size (e.g., 1000) to populate your issue/return selection dropdowns fully
+      const dropdownLimit = { page: 1, pageSize: 1000 };
+
+      const [fetchedBooksResponse, fetchedMembersResponse] = await Promise.all([
+        getAllBooks(dropdownLimit),
+        getAllMembers(dropdownLimit)
       ]);
+
+      // Safely map the paginated layout response structures
       setBooks(((fetchedBooksResponse as any)?.books || []) as Book[]);
-      setMembers((fetchedMembers || []) as Member[]);
+      setMembers(((fetchedMembersResponse as any)?.members || []) as Member[]);
     } catch (err: any) {
       setErrorMessage('Failed to pre-populate selection dropdown data.');
     } finally {

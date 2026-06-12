@@ -20,6 +20,16 @@ interface GetBooksParams {
   pageSize?: number;
 }
 
+interface GetMembersParams {
+  page: number;
+  pageSize: number;
+}
+
+interface FetchMembersResponse {
+  members: any[];
+  totalRecords: number;
+}
+
 export async function createBookAction(bookData: { title: string; author: string; isbn: string; total_copies: number; available_copies: number }) {
   return new Promise((resolve, reject) => {
     client.CreateBook(bookData, (err: any, response: any) => {
@@ -103,14 +113,23 @@ export async function getAllBooks(params?: GetBooksParams) {
   });
 }
 
-export async function getAllMembers() {
+export async function getAllMembers(params: GetMembersParams): Promise<FetchMembersResponse> {
   return new Promise((resolve) => {
-    // EmptyRequest payload {} matches your .proto definition
-    client.ListMembers({}, (err: any, response: any) => {
-      if (err || !response.members) {
-        resolve([]);
+    const request = {
+      page: params.page,
+      page_size: params.pageSize
+    };
+
+    // Ensure casing matches your runtime stub compilation convention (e.g., ListMembers vs listMembers)
+    client.ListMembers(request, (err: any, response: any) => {
+      if (err || !response) {
+        resolve({ members: [], totalRecords: 0 });
       } else {
-        resolve(response.members);
+        resolve({
+          members: response.members || [],
+          // Support both camelCase and snake_case runtime translations cleanly
+          totalRecords: response.total_records ?? response.totalRecords ?? 0
+        });
       }
     });
   });
