@@ -33,6 +33,8 @@ export default function MemberManagement() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [modalErrorMessage, setModalErrorMessage] = useState('');
+  const [modalSuccessMessage, setModalSuccessMessage] = useState('');
 
   const loadMembers = async () => {
     setLoading(true);
@@ -69,6 +71,8 @@ export default function MemberManagement() {
     setEmail('');
     setPhone('');
     setErrorMessage('');
+    setModalErrorMessage('');
+    setModalSuccessMessage('');
     setIsModalOpen(true);
   };
 
@@ -78,55 +82,66 @@ export default function MemberManagement() {
     setEmail(member.email);
     setPhone(member.phone);
     setErrorMessage('');
+    setModalErrorMessage('');
+    setModalSuccessMessage('');
     setIsModalOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMessage('');
+    setModalErrorMessage('');
+    setModalSuccessMessage('');
 
     const cleanName = name.trim();
     const cleanEmail = email.trim();
     const cleanPhone = phone.trim().replace(/[- ]/g, '');
 
     if (!cleanName || !cleanEmail || !cleanPhone) {
-      setErrorMessage('All core fields marked with an asterisk are mandatory.');
+      setModalErrorMessage('All core fields marked with an asterisk are mandatory.');
       return;
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(cleanEmail)) {
-      setErrorMessage('Malformed Email Syntax. Please provide a valid address.');
+      setModalErrorMessage('Malformed Email Syntax. Please provide a valid address.');
       return;
     }
 
     const phoneRegex = /^\d{11}$|^\d{10}$/;
     if (!phoneRegex.test(cleanPhone)) {
-      setErrorMessage('Invalid Mobile Number. Input must be exactly 10 digits long.');
+      setModalErrorMessage('Invalid Mobile Number. Input must be exactly 10 digits long.');
       return;
     }
 
     try {
+      let response: any;
       if (editingMember && editingMember.id) {
-        await updateMemberAction({
+        response = await updateMemberAction({
           id: editingMember.id,
           name: cleanName,
           email: cleanEmail,
           phone: cleanPhone,
         });
       } else {
-        await registerMemberAction({
+        response = await registerMemberAction({
           name: cleanName,
           email: cleanEmail,
           phone: cleanPhone,
         });
       }
 
-      setIsModalOpen(false);
+      // Check if the server action caught a backend error and returned it as a payload
+      if (response && response.success === false) {
+        setModalErrorMessage(response.message || 'An error occurred while saving the profile details.');
+        return;
+      }
+
+      // Display success inside the modal instead of closing it
+      setModalSuccessMessage(editingMember ? 'Patron profile successfully updated!' : 'New member successfully registered!');
       if (!editingMember) setCurrentPage(1); 
       await loadMembers();
     } catch (err: any) {
-      setErrorMessage(err.message || 'An error occurred while saving the profile details.');
+      setModalErrorMessage(err.message || 'An error occurred while saving the profile details.');
     }
   };
 
@@ -363,15 +378,23 @@ export default function MemberManagement() {
                 <input type="text" placeholder="10 digit contact number" value={phone} onChange={e => setPhone(e.target.value)} style={{ width: '100%', padding: '8px', boxSizing: 'border-box', background: 'var(--progress-bg, #fff)', color: 'var(--text-dark)', border: '1px solid var(--saffron-border, #ccc)', borderRadius: '4px' }} />
               </div>
 
-              {errorMessage && <p style={{ color: 'var(--warning-red, #d32f2f)', margin: 0, fontSize: '14px', fontWeight: 'bold' }}>{errorMessage}</p>}
+              {modalErrorMessage && <p style={{ color: 'var(--warning-red, #d32f2f)', margin: 0, fontSize: '14px', fontWeight: 'bold' }}>{modalErrorMessage}</p>}
+
+              {modalSuccessMessage && (
+                <p style={{ color: 'var(--success-green, #2e7d32)', margin: 0, fontSize: '14px', fontWeight: 'bold' }}>
+                  ✓ {modalSuccessMessage}
+                </p>
+              )}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px' }}>
                 <button type="button" onClick={() => setIsModalOpen(false)} style={{ padding: '8px 14px', background: 'transparent', border: '1px solid var(--saffron-border, #ccc)', color: 'var(--text-dark)', borderRadius: '4px', cursor: 'pointer' }}>
-                  Cancel
+                  {modalSuccessMessage ? 'Close' : 'Cancel'}
                 </button>
-                <button type="submit" style={{ padding: '8px 14px', background: 'var(--saffron-primary, #FF6600)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
-                  Save Profile Changes
-                </button>
+                {!modalSuccessMessage && (
+                  <button type="submit" style={{ padding: '8px 14px', background: 'var(--saffron-primary, #FF6600)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                    Save Profile Changes
+                  </button>
+                )}
               </div>
             </form>
           </div>

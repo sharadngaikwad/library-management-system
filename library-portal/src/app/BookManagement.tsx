@@ -34,7 +34,11 @@ export default function BookManagement() {
   const [isbn, setIsbn] = useState('');
   const [totalCopies, setTotalCopies] = useState(1);
   const [availableCopies, setAvailableCopies] = useState(1);
+  
+  // Isolated error tracking states
   const [errorMessage, setErrorMessage] = useState('');
+  const [modalErrorMessage, setModalErrorMessage] = useState('');
+  const [modalSuccessMessage, setModalSuccessMessage] = useState('');
 
   const loadBooks = async () => {
     setLoading(true);
@@ -66,25 +70,27 @@ export default function BookManagement() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMessage('');
+    setModalErrorMessage(''); // Clear previous popup modal errors
+    setModalSuccessMessage('');
 
     const cleanTitle = title.trim();
     const cleanAuthor = author.trim();
     const cleanIsbn = isbn.trim().replace(/[- ]/g, '');
 
     if (!cleanTitle || !cleanAuthor || !cleanIsbn) {
-      setErrorMessage('All core fields marked with an asterisk are mandatory.');
+      setModalErrorMessage('All core fields marked with an asterisk are mandatory.');
       return;
     }
 
     if (totalCopies < 0 || isNaN(totalCopies)) {
-      setErrorMessage('Total inventory assets cannot be negative.');
+      setModalErrorMessage('Total inventory assets cannot be negative.');
       return;
     }
 
     try {
+      let response: any;
       if (editingBook && editingBook.id) {
-        await updateBookAction({
+        response = await updateBookAction({
           id: editingBook.id,
           title: cleanTitle,
           author: cleanAuthor,
@@ -93,7 +99,7 @@ export default function BookManagement() {
           available_copies: availableCopies 
         });
       } else {
-        await createBookAction({
+        response = await createBookAction({
           title: cleanTitle,
           author: cleanAuthor,
           isbn: cleanIsbn, 
@@ -102,11 +108,19 @@ export default function BookManagement() {
         });
       }
 
-      setIsModalOpen(false);
+      // Check if the server action caught a backend error and returned it as a payload
+      if (response && response.success === false) {
+        setModalErrorMessage(response.message || 'An error occurred while saving the profile.');
+        return;
+      }
+
+      // Display success inside the modal instead of closing it
+      setModalSuccessMessage(editingBook ? 'Book successfully updated!' : 'Book successfully cataloged!');
       if (!editingBook) setCurrentPage(1); 
       await loadBooks();
     } catch (err: any) {
-      setErrorMessage(err.message || 'An error occurred while saving the profile.');
+      // Directs the server action error straight into the pop-up modal view wrapper
+      setModalErrorMessage(err.message || 'An error occurred while saving the profile.');
     }
   };
 
@@ -117,7 +131,8 @@ export default function BookManagement() {
     setIsbn('');
     setTotalCopies(1);
     setAvailableCopies(1); 
-    setErrorMessage('');
+    setModalErrorMessage(''); // Reset modal message explicitly
+    setModalSuccessMessage('');
     setIsModalOpen(true);
   };
 
@@ -128,38 +143,26 @@ export default function BookManagement() {
     setIsbn(book.isbn);
     setTotalCopies(book.total_copies);
     setAvailableCopies(book.available_copies); 
-    setErrorMessage('');
+    setModalErrorMessage(''); // Reset modal message explicitly
+    setModalSuccessMessage('');
     setIsModalOpen(true);
   };
 
   // --- SLIDING WINDOW PAGINATION LOGIC ---
   const getPaginationPageNumbers = () => {
     const pageNumbers: (number | string)[] = [];
-    const maxVisibleNeighbors = 1; // Number of pages to show before and after current page
+    const maxVisibleNeighbors = 1;
 
     if (totalPages <= 5) {
-      // If total pages are small, render all numbers directly
       for (let i = 1; i <= totalPages; i++) pageNumbers.push(i);
     } else {
-      // Always include the very first page
       pageNumbers.push(1);
-
       const startPage = Math.max(2, currentPage - maxVisibleNeighbors);
       const endPage = Math.min(totalPages - 1, currentPage + maxVisibleNeighbors);
 
-      if (startPage > 2) {
-        pageNumbers.push('...');
-      }
-
-      for (let i = startPage; i <= endPage; i++) {
-        pageNumbers.push(i);
-      }
-
-      if (endPage < totalPages - 1) {
-        pageNumbers.push('...');
-      }
-
-      // Always include the very last page
+      if (startPage > 2) pageNumbers.push('...');
+      for (let i = startPage; i <= endPage; i++) pageNumbers.push(i);
+      if (endPage < totalPages - 1) pageNumbers.push('...');
       pageNumbers.push(totalPages);
     }
 
@@ -179,6 +182,13 @@ export default function BookManagement() {
           + Add New Book
         </button>
       </div>
+
+      {/* Main layout background/fetching context error notification layer */}
+      {errorMessage && (
+        <div style={{ color: 'var(--warning-red, #d32f2f)', padding: '10px 0', fontWeight: 'bold' }}>
+          {errorMessage}
+        </div>
+      )}
 
       <div style={{ overflowX: 'auto', minHeight: '200px', position: 'relative' }}>
         {loading ? (
@@ -238,7 +248,6 @@ export default function BookManagement() {
         flexWrap: 'wrap',
         gap: '12px'
       }}>
-        {/* Dropdown Page Size Selector */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--text-dark)' }}>
           <span>Show rows per page:</span>
           <select 
@@ -261,7 +270,6 @@ export default function BookManagement() {
           </select>
         </div>
 
-        {/* Dynamic Buttons Engine Layout Router */}
         {totalPages > 1 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <button 
@@ -362,7 +370,28 @@ export default function BookManagement() {
               </div>
               
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 'bold', marginBottom: '4px', color: 'var(--text-dark)' }}>ISBN Identification *</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--text-dark)' }}>ISBN Identification *</label>
+                  {!editingBook && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Generate a mathematically valid random ISBN-13
+                        let prefix = '978';
+                        for (let i = 0; i < 9; i++) prefix += Math.floor(Math.random() * 10);
+                        let sum = 0;
+                        for (let i = 0; i < 12; i++) sum += parseInt(prefix[i]) * (i % 2 === 0 ? 1 : 3);
+                        const checkDigit = (10 - (sum % 10)) % 10;
+                        
+                        setIsbn(prefix + checkDigit);
+                        setModalErrorMessage(''); // Clear out any previous errors
+                      }}
+                      style={{ fontSize: '11px', padding: '2px 8px', background: 'var(--progress-bg, #eee)', border: '1px solid var(--saffron-border, #ccc)', borderRadius: '4px', cursor: 'pointer', color: 'var(--text-dark)' }}
+                    >
+                      Generate Valid ISBN For Test
+                    </button>
+                  )}
+                </div>
                 <input type="text" value={isbn} onChange={e => setIsbn(e.target.value)} disabled={!!editingBook} style={{ width: '100%', padding: '8px', boxSizing: 'border-box', background: editingBook ? 'rgba(0,0,0,0.1)' : 'var(--progress-bg, #fff)', color: 'var(--text-dark)', border: '1px solid var(--saffron-border, #ccc)', borderRadius: '4px', cursor: editingBook ? 'not-allowed' : 'text' }} />
               </div>
               
@@ -406,15 +435,28 @@ export default function BookManagement() {
                 </div>
               </div>
 
-              {errorMessage && <p style={{ color: 'var(--warning-red, #d32f2f)', margin: 0, fontSize: '14px', fontWeight: 'bold' }}>{errorMessage}</p>}
+              {/* Isolated Popup Error View Field block rendered contextually */}
+              {modalErrorMessage && (
+                <p style={{ color: 'var(--warning-red, #d32f2f)', margin: 0, fontSize: '14px', fontWeight: 'bold' }}>
+                  {modalErrorMessage}
+                </p>
+              )}
+
+              {modalSuccessMessage && (
+                <p style={{ color: 'var(--success-green, #2e7d32)', margin: 0, fontSize: '14px', fontWeight: 'bold' }}>
+                  ✓ {modalSuccessMessage}
+                </p>
+              )}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px' }}>
                 <button type="button" onClick={() => setIsModalOpen(false)} style={{ padding: '8px 14px', background: 'transparent', border: '1px solid var(--saffron-border, #ccc)', color: 'var(--text-dark)', borderRadius: '4px', cursor: 'pointer' }}>
-                  Cancel
+                  {modalSuccessMessage ? 'Close' : 'Cancel'}
                 </button>
-                <button type="submit" style={{ padding: '8px 14px', background: 'var(--saffron-primary, #FF6600)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
-                  Save Profile Changes
-                </button>
+                {!modalSuccessMessage && (
+                  <button type="submit" style={{ padding: '8px 14px', background: 'var(--saffron-primary, #FF6600)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                    Save Profile Changes
+                  </button>
+                )}
               </div>
             </form>
           </div>

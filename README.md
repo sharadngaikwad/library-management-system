@@ -80,3 +80,7 @@ Acts as the ledger tracking the borrowing and returning of books.
 | `borrow_date` | DATE | Default `CURRENT_DATE` |
 | `return_date` | DATE | Nullable, Must be `>= borrow_date` |
 | `due_date` | DATE | Default `borrow_date + 14 days`, Must be `>= borrow_date` |
+
+## Testing
+
+See the detailed testing instructions in [README-Testing.md](README-Testing.md).

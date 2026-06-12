@@ -43,7 +43,11 @@ def get_all_books(db, request, context):
     
     try:
         total_records = db.query(models.Book).count()
-        query = db.query(models.Book).order_by(models.Book.id.asc())
+        query = db.query(models.Book).order_by(
+            models.Book.title.asc(),
+            models.Book.author.asc(),
+            models.Book.id.asc()
+        )
         
         if request.page > 0 and request.page_size > 0:
             offset_value = (request.page - 1) * request.page_size
