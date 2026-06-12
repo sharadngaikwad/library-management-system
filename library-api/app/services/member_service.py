@@ -1,11 +1,20 @@
+import re
 from logger_config import app_logger
 import grpc
 from app import models
 import library_pb2
 
+# Basic robust regex pattern for email format validation
+EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+
 def get_all_members(db, request, context):
     app_logger.info("Received get_all_members request. Page: %s, Page Size: %s", request.page, request.page_size)
     
+    # Validation: Verify pagination criteria are non-negative values
+    if request.page < 0 or request.page_size < 0:
+        app_logger.warning("Invalid pagination criteria: Page=%s, Page Size=%s", request.page, request.page_size)
+        context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Pagination page indices and size windows must be non-negative values.")
+
     # 1. Extract and sanitize incoming pagination values (providing safe defaults)
     page = max(1, request.page)
     page_size = request.page_size if request.page_size > 0 else 10
@@ -50,13 +59,35 @@ def get_all_members(db, request, context):
 def create_new_member(db, request, context):
     app_logger.info("Received create_new_member request for email: %s", request.email)
     
+    # 1. Structural Sanitation and Empty Attribute Guards
+    name_clean = request.name.strip() if request.name else ""
+    email_clean = request.email.strip().lower() if request.email else ""
+    phone_clean = request.phone.strip() if request.phone else ""
+
+    if not name_clean or not email_clean:
+        app_logger.warning("Member creation rejected: Missing mandatory parameter fields.")
+        context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Patron Name and Email address are mandatory parameters.")
+
+    # 2. Regex Syntax Logic Validation
+    if not EMAIL_REGEX.match(email_clean):
+        app_logger.warning("Member creation rejected. Invalid email format structure: %s", email_clean)
+        context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Provided value is not a syntactically valid email format address.")
+
     try:
-        existing = db.query(models.Member).filter(models.Member.email == request.email).first()
-        if existing:
-            app_logger.warning("Member creation rejected. Email already exists: %s", request.email)
-            context.abort(grpc.StatusCode.ALREADY_EXISTS, "Email matching member already registered")
+        # 3. Unique Controllable Constraints Mapping Check (Email Lookup)
+        existing_email = db.query(models.Member).filter(models.Member.email == email_clean).first()
+        if existing_email:
+            app_logger.warning("Member creation rejected. Email already exists: %s", email_clean)
+            context.abort(grpc.StatusCode.ALREADY_EXISTS, "This email matching user is already registered on this platform.")
             
-        member = models.Member(name=request.name, email=request.email, phone=request.phone)
+        # 4. Unique Controllable Constraints Mapping Check (Phone Lookup)
+        if phone_clean:
+            existing_phone = db.query(models.Member).filter(models.Member.phone == phone_clean).first()
+            if existing_phone:
+                app_logger.warning("Member creation rejected. Phone number already exists: %s", phone_clean)
+                context.abort(grpc.StatusCode.ALREADY_EXISTS, "This phone number is already assigned to another active patron member.")
+
+        member = models.Member(name=name_clean, email=email_clean, phone=phone_clean or None)
         db.add(member)
         db.commit()
         
@@ -71,25 +102,45 @@ def create_new_member(db, request, context):
 def modify_member_record(db, request, context):
     app_logger.info("Received modify_member_record request for Member ID: %s", request.id)
     
+    # 1. Type Boundary & Structural Logic Verification
+    if request.id <= 0:
+        app_logger.warning("Member modification failed. Invalid numeric structural ID passed: %s", request.id)
+        context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Target member lookup identifier must be a positive integer.")
+
+    name_clean = request.name.strip() if request.name else ""
+    email_clean = request.email.strip().lower() if request.email else ""
+    phone_clean = request.phone.strip() if request.phone else ""
+
+    if not name_clean or not email_clean:
+        app_logger.warning("Member modification rejected for ID %s: Missing structural arguments.", request.id)
+        context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Patron record updates require a valid Name and Email string.")
+
+    if not EMAIL_REGEX.match(email_clean):
+        app_logger.warning("Member modification rejected for ID %s. Invalid email syntax string: %s", request.id, email_clean)
+        context.abort(grpc.StatusCode.INVALID_ARGUMENT, "The updated string is not a valid email address.")
+
     try:
+        # 2. Fetch the target row record from the database
         member = db.query(models.Member).filter(models.Member.id == request.id).first()
         if not member:
             app_logger.warning("Member modification failed. Target ID not found: %s", request.id)
-            context.abort(grpc.StatusCode.NOT_FOUND, "Target member matching ID not found")
+            context.abort(grpc.StatusCode.NOT_FOUND, "Target member record matching this database identifier was not found.")
         
-        if request.email != member.email:
-            if db.query(models.Member.id).filter(models.Member.email == request.email).first():
-                app_logger.warning("Member %s modification rejected. Email %s already used by another account", request.id, request.email)
-                context.abort(grpc.StatusCode.ALREADY_EXISTS, "Email address already registered to another member")
+        # 3. Cross-record Uniqueness Check: Email clash with an alternate row?
+        if email_clean != member.email:
+            if db.query(models.Member.id).filter(models.Member.email == email_clean, models.Member.id != request.id).first():
+                app_logger.warning("Member %s modification rejected. Email %s already used by another account", request.id, email_clean)
+                context.abort(grpc.StatusCode.ALREADY_EXISTS, "This updated email address is already assigned to another member platform account.")
 
-        if request.phone and request.phone != member.phone:
-            if db.query(models.Member.id).filter(models.Member.phone == request.phone).first():
-                app_logger.warning("Member %s modification rejected. Phone number already used by another account", request.id)
-                context.abort(grpc.StatusCode.ALREADY_EXISTS, "Mobile number already assigned to another member")
+        # 4. Cross-record Uniqueness Check: Phone clash with an alternate row?
+        if phone_clean and phone_clean != member.phone:
+            if db.query(models.Member.id).filter(models.Member.phone == phone_clean, models.Member.id != request.id).first():
+                app_logger.warning("Member %s modification rejected. Phone number %s already used by another account", request.id, phone_clean)
+                context.abort(grpc.StatusCode.ALREADY_EXISTS, "This updated mobile phone number is already registered to another patron.")
 
-        member.name = request.name
-        member.email = request.email
-        member.phone = request.phone
+        member.name = name_clean
+        member.email = email_clean
+        member.phone = phone_clean or None
         db.commit()
         
         app_logger.info("Successfully modified member record for ID: %s", member.id)

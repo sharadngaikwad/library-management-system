@@ -10,8 +10,13 @@ def execute_borrow_transaction(db, request, context):
         request.member_id, request.book_id
     )
     
+    # 1. Structural ID Type Validations
+    if request.member_id <= 0 or request.book_id <= 0:
+        app_logger.warning("Borrow rejected. Invalid numeric identifiers passed: Member ID=%s, Book ID=%s", request.member_id, request.book_id)
+        context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Identifiers for Member ID and Book ID must be valid positive integers.")
+    
     try:
-        # Existence Validation Layer
+        # 2. Existence Validation Layer
         member_exists = db.query(models.Member.id).filter(models.Member.id == request.member_id).first()
         book_exists = db.query(models.Book.id).filter(models.Book.id == request.book_id).first()
         
@@ -20,9 +25,9 @@ def execute_borrow_transaction(db, request, context):
                 "Borrow failed. Entity dependencies missing. Book Exists: %s, Member Exists: %s", 
                 bool(book_exists), bool(member_exists)
             )
-            context.abort(grpc.StatusCode.NOT_FOUND, "Entity dependencies not found")
+            context.abort(grpc.StatusCode.NOT_FOUND, "The requested Member or Book record does not exist.")
 
-        # Double-Borrow Prevention Check
+        # 3. Double-Borrow Prevention Check
         active_loan = db.query(models.Operation.id).filter(
             models.Operation.member_id == request.member_id,
             models.Operation.book_id == request.book_id,
@@ -36,7 +41,7 @@ def execute_borrow_transaction(db, request, context):
             )
             context.abort(grpc.StatusCode.ALREADY_EXISTS, "Member possesses an unreturned active checkout copy")
 
-        # ATOMIC DECREMENT ENGINE LAYER (Approach B Strategy)
+        # 4. ATOMIC DECREMENT ENGINE LAYER (Approach B Strategy)
         app_logger.debug("Attempting atomic stock decrement for Book ID: %s", request.book_id)
         updated_rows = db.query(models.Book).filter(
             models.Book.id == request.book_id,
@@ -48,7 +53,7 @@ def execute_borrow_transaction(db, request, context):
 
         if updated_rows == 0:
             app_logger.warning("Borrow rejected. Inventory copies exhausted for Book ID: %s", request.book_id)
-            context.abort(grpc.StatusCode.FAILED_PRECONDITION, "Inventory copies exhausted for checkout")
+            context.abort(grpc.StatusCode.FAILED_PRECONDITION, "This book catalog item is currently out of stock.")
 
         # Insert historical log record
         op = models.Operation(member_id=request.member_id, book_id=request.book_id)
@@ -85,8 +90,13 @@ def execute_return_transaction(db, request, context):
         request.member_id, request.book_id
     )
     
+    # 1. Structural ID Type Validations
+    if request.member_id <= 0 or request.book_id <= 0:
+        app_logger.warning("Return rejected. Invalid numeric identifiers passed: Member ID=%s, Book ID=%s", request.member_id, request.book_id)
+        context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Identifiers for Member ID and Book ID must be valid positive integers.")
+    
     try:
-        # ATOMIC UPDATE LEDGER (Blocks multi-click operations gracefully)
+        # 2. ATOMIC UPDATE LEDGER (Blocks multi-click operations gracefully)
         updated_operations = db.query(models.Operation).filter(
             models.Operation.member_id == request.member_id,
             models.Operation.book_id == request.book_id,
@@ -101,9 +111,18 @@ def execute_return_transaction(db, request, context):
                 "Return failed. No active loan record found for Member ID: %s, Book ID: %s", 
                 request.member_id, request.book_id
             )
-            context.abort(grpc.StatusCode.NOT_FOUND, "No matching active loan operational record found")
+            context.abort(grpc.StatusCode.NOT_FOUND, "No matching active loan operational record found for this member and book.")
 
-        # ATOMIC STOCK INCREMENT
+        # 3. ATOMIC STOCK INCREMENT & MAXIMUM CAPACITY DATA INTEGRITY GUARD
+        # Fetch book properties to safeguard database against illegal surplus stock generation
+        book = db.query(models.Book).filter(models.Book.id == request.book_id).first()
+        if book and book.available_copies >= book.total_copies:
+            app_logger.error(
+                "Critical Anomalous Data Discrepancy! Book ID %s available stock (%d) equals or exceeds total registered capacity (%d). Aborting step.",
+                book.id, book.available_copies, book.total_copies
+            )
+            context.abort(grpc.StatusCode.DATA_LOSS, "Database consistency exception: Checked stock values surpass full catalog metrics.")
+
         app_logger.debug("Incrementing available copies for Book ID: %s", request.book_id)
         db.query(models.Book).filter(models.Book.id == request.book_id).update(
             {models.Book.available_copies: models.Book.available_copies + 1},
@@ -132,6 +151,11 @@ def get_active_loans_list(db, request, context):
         request.member_id if request.member_id > 0 else "None", request.page, request.page_size
     )
     
+    # 1. Structural Pagination Type Validations
+    if request.page < 0 or request.page_size < 0:
+        app_logger.warning("Invalid pagination criteria: Page=%s, Page Size=%s", request.page, request.page_size)
+        context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Pagination indices and frame boundaries must be non-negative values.")
+    
     try:
         # Base filtering parameters layout config mapping
         query = db.query(models.Operation).filter(models.Operation.return_date == None)
@@ -139,17 +163,17 @@ def get_active_loans_list(db, request, context):
         if request.member_id > 0:
             query = query.filter(models.Operation.member_id == request.member_id)
             
-        # 1. Compute aggregate matches count before slicing the result window
+        # 2. Compute aggregate matches count before slicing the result window
         total_records = query.count()
         
-        # 2. Extract, sanitize, and validate incoming pagination inputs
+        # 3. Extract, sanitize, and validate incoming pagination inputs
         page = max(1, request.page)
         page_size = request.page_size if request.page_size > 0 else 10
         offset_value = (page - 1) * page_size
         
         app_logger.debug("Executing paginated query window. Offset: %d, Limit: %d", offset_value, page_size)
         
-        # 3. Pull sliced record segment window
+        # 4. Pull sliced record segment window
         results = query.offset(offset_value).limit(page_size).all()
         
         protobuf_list = [
@@ -166,7 +190,6 @@ def get_active_loans_list(db, request, context):
             len(protobuf_list), total_records
         )
         
-        # 4. Return both the data array slice and overall count tracker
         return library_pb2.ListLoansResponse(
             loans=protobuf_list,
             total_records=total_records

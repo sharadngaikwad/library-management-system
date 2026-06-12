@@ -1,30 +1,58 @@
 -- init.sql
 
+-- ============================================================================
+-- 1. BOOKS TABLE WITH INVENTORY & WHITE-SPACE CONSTRAINTS
+-- ============================================================================
 CREATE TABLE IF NOT EXISTS books (
     id SERIAL PRIMARY KEY,
-    title VARCHAR(255) NOT NULL,
-    author VARCHAR(255) NOT NULL,
-    isbn VARCHAR(50) UNIQUE NOT NULL,
-    total_copies INT NOT NULL DEFAULT 1 CHECK (total_copies >= 0),
-    available_copies INT NOT NULL DEFAULT 1 CHECK (available_copies >= 0)
+    title VARCHAR(255) NOT NULL CHECK (TRIM(title) <> ''),
+    author VARCHAR(255) NOT NULL CHECK (TRIM(author) <> ''),
+    isbn VARCHAR(50) UNIQUE NOT NULL CHECK (TRIM(isbn) <> ''),
+    
+    -- total_copies defaults to 1 and must be at least 1 for a new catalog entry
+    total_copies INT NOT NULL DEFAULT 1 CHECK (total_copies >= 1),
+    
+    -- available_copies tracks current shelf inventory dynamically
+    available_copies INT NOT NULL DEFAULT 1,
+    
+    -- Multi-column integrity rules ensuring stock levels remain completely accurate
     CONSTRAINT check_available_copies_floor CHECK (available_copies >= 0),
     CONSTRAINT check_available_copies_ceiling CHECK (available_copies <= total_copies)
 );
 
+-- ============================================================================
+-- 2. MEMBERS TABLE WITH EMAIL VALIDATION & WHITE-SPACE CONSTRAINTS
+-- ============================================================================
 CREATE TABLE IF NOT EXISTS members (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    phone VARCHAR(20)
+    name VARCHAR(255) NOT NULL CHECK (TRIM(name) <> ''),
+    
+    -- Enforces lowercase string normalization and a strict structural email pattern match
+    email VARCHAR(255) UNIQUE NOT NULL CHECK (
+        email = LOWER(TRIM(email)) AND 
+        email ~* '^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$'
+    ),
+    
+    -- Ensures phone numbers don't contain empty spaces if provided
+    phone VARCHAR(20) UNIQUE CHECK (phone IS NULL OR TRIM(phone) <> '')
 );
 
+-- ============================================================================
+-- 3. OPERATIONS TABLE WITH CHRONOLOGICAL DATE CONSTRAINTS
+-- ============================================================================
 CREATE TABLE IF NOT EXISTS operations (
     id SERIAL PRIMARY KEY,
-    member_id INT REFERENCES members(id) ON DELETE RESTRICT,
-    book_id INT REFERENCES books(id) ON DELETE RESTRICT,
+    member_id INT NOT NULL REFERENCES members(id) ON DELETE RESTRICT,
+    book_id INT NOT NULL REFERENCES books(id) ON DELETE RESTRICT,
     borrow_date DATE NOT NULL DEFAULT CURRENT_DATE,
     return_date DATE,
-    due_date DATE NOT NULL DEFAULT (CURRENT_DATE + INTERVAL '14 days')
+    due_date DATE NOT NULL DEFAULT (CURRENT_DATE + INTERVAL '14 days'),
+    
+    -- Chronological rule: A book cannot be returned before it is physically checked out
+    CONSTRAINT check_return_after_borrow CHECK (return_date IS NULL OR return_date >= borrow_date),
+    
+    -- Chronological rule: Due dates must always fall after the initialization checkout date
+    CONSTRAINT check_due_after_borrow CHECK (due_date >= borrow_date)
 );
 
 CREATE INDEX idx_operations_member ON operations(member_id);

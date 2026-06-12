@@ -5,7 +5,6 @@ import * as protoLoader from '@grpc/proto-loader';
 import path from 'path';
 import { serverLogger } from '@/lib/server-logger';
 
-// Target resolution path pointing to the updated neutral service layout directory
 const PROTO_PATH = path.join(process.cwd(), '../library-api/proto/library.proto');
 
 let client: any;
@@ -39,31 +38,35 @@ interface FetchMembersResponse {
   totalRecords: number;
 }
 
-export async function createBookAction(bookData: { title: string; author: string; isbn: string; total_copies: number; available_copies: number }) {
+// ============================================================================
+// MUTATIONS (Standardized JSON Object Return Contract)
+// ============================================================================
+
+export async function createBookAction(bookData: { title: string; author: string; isbn: string; available_copies: number; total_copies: number }) {
   serverLogger.info('Server Action [createBookAction] invoked for ISBN: %s', bookData.isbn);
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     client.CreateBook(bookData, (err: any, response: any) => {
       if (err) {
         serverLogger.error('gRPC CreateBook execution exception occurred:', err);
-        reject(new Error(err.details || 'Failed to create book record.'));
+        resolve({ success: false, message: err.details || 'Failed to create book record.' });
       } else {
         serverLogger.info('Successfully cataloged book record. ID: %s', response?.id);
-        resolve(response);
+        resolve({ success: true, data: response });
       }
     });
   });
 }
 
-export async function updateBookAction(bookData: { id: number; title: string; author: string; isbn: string; total_copies: number; available_copies: number }) {
+export async function updateBookAction(bookData: { id: number; title: string; author: string; isbn: string; available_copies: number;total_copies: number }) {
   serverLogger.info('Server Action [updateBookAction] invoked for Book ID: %s', bookData.id);
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     client.UpdateBook(bookData, (err: any, response: any) => {
       if (err) {
         serverLogger.error(`gRPC UpdateBook failed for Book ID ${bookData.id}:`, err);
-        reject(new Error(err.details || 'Failed to update book profile.'));
+        resolve({ success: false, message: err.details || 'Failed to update book profile.' });
       } else {
         serverLogger.info('Successfully modified book record metrics for ID: %s', bookData.id);
-        resolve(response);
+        resolve({ success: true, data: response });
       }
     });
   });
@@ -71,14 +74,14 @@ export async function updateBookAction(bookData: { id: number; title: string; au
 
 export async function registerMemberAction(memberData: { name: string; email: string; phone: string }) {
   serverLogger.info('Server Action [registerMemberAction] invoked for email: %s', memberData.email);
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     client.CreateMember(memberData, (err: any, response: any) => {
       if (err) {
         serverLogger.error('gRPC CreateMember operation exception occurred:', err);
-        reject(new Error(err.details || 'Failed to register member.'));
+        resolve({ success: false, message: err.details || 'Failed to register member.' });
       } else {
         serverLogger.info('Successfully registered new patron with ID: %s', response?.id);
-        resolve(response);
+        resolve({ success: true, data: response });
       }
     });
   });
@@ -86,14 +89,44 @@ export async function registerMemberAction(memberData: { name: string; email: st
 
 export async function updateMemberAction(memberData: { id: number; name: string; email: string; phone: string }) {
   serverLogger.info('Server Action [updateMemberAction] invoked for Patron ID: %s', memberData.id);
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     client.UpdateMember(memberData, (err: any, response: any) => {
       if (err) {
         serverLogger.error(`gRPC UpdateMember operation failed for ID ${memberData.id}:`, err);
-        reject(new Error(err.details || 'Failed to modify patron profile.'));
+        resolve({ success: false, message: err.details || 'Failed to modify patron profile.' });
       } else {
         serverLogger.info('Successfully synchronized layout attributes for ID: %s', memberData.id);
-        resolve(response);
+        resolve({ success: true, data: response });
+      }
+    });
+  });
+}
+
+export async function borrowBookAction(payload: { member_id: number; book_id: number }) {
+  serverLogger.info('Server Action [borrowBookAction] execution triggered. Book: %s, Patron: %s', payload.book_id, payload.member_id);
+  return new Promise((resolve) => {
+    client.BorrowBook(payload, (err: any, response: any) => {
+      if (err) {
+        serverLogger.warn('gRPC BorrowBook verification rejected transactional conditions:', err);
+        resolve({ success: false, message: err.details || 'Failed to execute borrow checkout request.' });
+      } else {
+        serverLogger.info('Borrow clearance processing complete for confirmation ID: %s', response?.id);
+        resolve({ success: true, data: response });
+      }
+    });
+  });
+}
+
+export async function returnBookAction(payload: { member_id: number; book_id: number }) {
+  serverLogger.info('Server Action [returnBookAction] execution triggered. Book: %s, Patron: %s', payload.book_id, payload.member_id);
+  return new Promise((resolve) => {
+    client.ReturnBook(payload, (err: any, response: any) => {
+      if (err) {
+        serverLogger.warn('gRPC ReturnBook ledger processing failed:', err);
+        resolve({ success: false, message: err.details || 'Failed to process checkout return.' });
+      } else {
+        serverLogger.info('Return processing update complete.');
+        resolve({ success: true, message: response.message || 'Book checked in successfully.' });
       }
     });
   });
@@ -108,22 +141,21 @@ export async function executeOperation(action: 'borrow' | 'return', memberId: nu
         serverLogger.warn(`gRPC counter operation transaction failure [${method}] on Book ${bookId}:`, err);
         resolve({ success: false, message: err.details || 'Internal pipeline error' });
       } else {
-        serverLogger.info('Successfully processed counter ledger update [%%s] for member %s', method, memberId);
+        serverLogger.info('Successfully processed counter ledger update [%s] for member %s', method, memberId);
         resolve({ success: true, message: response.message || 'Operation recorded successfully!' });
       }
     });
   });
 }
 
+// ============================================================================
+// READ OPERATIONS (Data Arrays with Fallback Defaults)
+// ============================================================================
+
 export async function getActiveLoans(memberId: number, page: number, pageSize: number) {
   serverLogger.debug('Server Action [getActiveLoans] requested pagination sequence -> Member: %s, Page: %s', memberId, page);
   return new Promise((resolve) => {
-    const payload = { 
-      member_id: memberId, 
-      page: page, 
-      page_size: pageSize 
-    };
-
+    const payload = { member_id: memberId, page: page, page_size: pageSize };
     client.ListActiveLoans(payload, (err: any, response: any) => {
       if (err) {
         serverLogger.error(`Failed to pull active loans index for member ${memberId}:`, err);
@@ -139,35 +171,27 @@ export async function getActiveLoans(memberId: number, page: number, pageSize: n
 }
 
 export async function getAllBooks(params?: GetBooksParams) {
-  const request = {
-    page: params?.page || 0,
-    page_size: params?.pageSize || 0
-  };
+  const request = { page: params?.page || 0, page_size: params?.pageSize || 0 };
   serverLogger.debug('Server Action [getAllBooks] invoking ListBooks gRPC request. Window criteria:', request);
-
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     client.ListBooks(request, (err: any, response: any) => {
       if (err) {
         serverLogger.error('gRPC ListBooks channel reading exception:', err);
-        return reject(new Error(err.message || 'Failed to fetch catalog.'));
+        resolve({ books: [], totalRecords: 0 });
+      } else {
+        serverLogger.info('Catalog list parsed successfully. Returning %d elements.', response?.books?.length || 0);
+        resolve({
+          books: response.books || [],
+          totalRecords: response.total_records || 0
+        });
       }
-      
-      serverLogger.info('Catalog list parsed successfully. Returning %d elements.', response?.books?.length || 0);
-      resolve({
-        books: response.books || [],
-        totalRecords: response.total_records || 0
-      });
     });
   });
 }
 
 export async function getAllMembers(params: GetMembersParams): Promise<FetchMembersResponse> {
-  const request = {
-    page: params.page,
-    page_size: params.pageSize
-  };
+  const request = { page: params.page, page_size: params.pageSize };
   serverLogger.debug('Server Action [getAllMembers] invoking ListMembers gRPC payload context:', request);
-
   return new Promise((resolve) => {
     client.ListMembers(request, (err: any, response: any) => {
       if (err || !response) {
@@ -179,45 +203,6 @@ export async function getAllMembers(params: GetMembersParams): Promise<FetchMemb
           members: response.members || [],
           totalRecords: structuralCount
         });
-      }
-    });
-  });
-}
-
-export async function borrowBookAction(payload: { member_id: number; book_id: number }) {
-  serverLogger.info('Server Action [borrowBookAction] execution triggered. Book: %s, Patron: %s', payload.book_id, payload.member_id);
-  
-  return new Promise((resolve) => {
-    client.BorrowBook(payload, (err: any, response: any) => {
-      if (err) {
-        serverLogger.warn('gRPC BorrowBook verification rejected transactional conditions:', err);
-        
-        resolve({
-          success: false,
-          message: err.details || 'Failed to execute borrow checkout request.'
-        });
-      } else {
-        serverLogger.info('Borrow clearance processing complete for confirmation ID: %s', response?.id);
-        
-        resolve({
-          success: true,
-          data: response
-        });
-      }
-    });
-  });
-}
-
-export async function returnBookAction(payload: { member_id: number; book_id: number }) {
-  serverLogger.info('Server Action [returnBookAction] execution triggered. Book: %s, Patron: %s', payload.book_id, payload.member_id);
-  return new Promise((resolve, reject) => {
-    client.ReturnBook(payload, (err: any, response: any) => {
-      if (err) {
-        serverLogger.warn('gRPC ReturnBook ledger processing failed:', err);
-        reject(new Error(err.details || 'Failed to process checkout return.'));
-      } else {
-        serverLogger.info('Return processing update complete.');
-        resolve(response);
       }
     });
   });
