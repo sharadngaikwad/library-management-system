@@ -76,25 +76,31 @@ export default function CounterOperations({ onRefresh }: CounterOperationsProps)
     setShowConfirmModal(true);
   };
 
-  const handleCommitIssue = async () => {
+const handleCommitIssue = async () => {
     setShowConfirmModal(false);
     setIsProcessing(true);
     setErrorMessage('');
     setSuccessMessage('');
 
     try {
-      await borrowBookAction({
+      const response: any = await borrowBookAction({
         member_id: Number(memberId),
         book_id: Number(bookId)
       });
 
+      if (response && response.success === false) {
+        setErrorMessage(response.message);
+        return;
+      }
+
       setSuccessMessage(`Book successfully issued to Member!`);
-      setBookId(''); // Clear selection state for rapid sequential entry processing
+      setBookId('');
       
       // Refresh current operational logs and lookups to sync live stock badges
       await Promise.all([onRefresh(), loadSelectionLists()]);
     } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to process issue operation entry.');
+      // Fallback for real network disruptions or engine drops
+      setErrorMessage('A critical connection pipeline error occurred.');
     } finally {
       setIsProcessing(false);
     }
@@ -206,7 +212,7 @@ export default function CounterOperations({ onRefresh }: CounterOperationsProps)
 
       {errorMessage && (
         <p style={{ color: 'var(--warning-red, #d32f2f)', margin: '12px 0 0 0', fontWeight: 'bold', fontSize: '14px' }}>
-          Error: {errorMessage}
+          {errorMessage}
         </p>
       )}
 

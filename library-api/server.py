@@ -1,3 +1,4 @@
+from logger_config import app_logger
 import sys
 import os
 import grpc
@@ -7,14 +8,27 @@ from grpc_reflection.v1alpha import reflection
 # Resolves the 'proto' folder path relative to the root execution context smoothly
 proto_path = os.path.abspath(os.path.join(os.path.dirname(__file__), './proto'))
 sys.path.append(proto_path)
+app_logger.info("Configured system search path for protobuf modules: %s", proto_path)
 
-import library_pb2
-import library_pb2_grpc
+try:
+    import library_pb2
+    import library_pb2_grpc
+    app_logger.debug("Successfully imported generated gRPC protobuf artifacts.")
+except Exception as e:
+    app_logger.critical("Failed to import protobuf dependencies. Checking path configurations. Error: %s", str(e), exc_info=True)
+    sys.exit(1)
 
 from app.database import SessionLocal, Base, engine
 from app.services import book_service, member_service, counter_service
 
-Base.metadata.create_all(bind=engine)
+try:
+    app_logger.info("Initializing engine schema metadata definitions...")
+    Base.metadata.create_all(bind=engine)
+    app_logger.info("Database schema state verified and sync successfully completed.")
+except Exception as e:
+    app_logger.critical("Database initialization failed during bootstrapping: %s", str(e), exc_info=True)
+    sys.exit(1)
+
 
 class LibraryService(library_pb2_grpc.LibraryServiceServicer):
     # --- BOOK DOMAIN MAPS ---
@@ -41,18 +55,40 @@ class LibraryService(library_pb2_grpc.LibraryServiceServicer):
     def ListActiveLoans(self, request, context):
         with SessionLocal() as db: return counter_service.get_active_loans_list(db, request, context)
 
+
 def serve():
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    max_workers = 10
+    app_logger.info("Initializing gRPC Server Engine with a ThreadPool max_workers capacity of %d.", max_workers)
+    
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers))
     library_pb2_grpc.add_LibraryServiceServicer_to_server(LibraryService(), server)
     
-    if os.getenv('APP_ENV', 'development') != 'production':
+    env_state = os.getenv('APP_ENV', 'development')
+    if env_state != 'production':
+        app_logger.info("App Environment is configured as '%s'. Activating gRPC Server Reflection.", env_state)
         SERVICE_NAMES = (library_pb2.DESCRIPTOR.services_by_name['LibraryService'].full_name, reflection.SERVICE_NAME)
         reflection.enable_server_reflection(SERVICE_NAMES, server)
+    else:
+        app_logger.info("App Environment is running in production mode. Server Reflection remains disabled.")
 
-    server.add_insecure_port('[::]:50051')
-    print("Symmetric modular gRPC system operational and listening on port 50051...")
-    server.start()
-    server.wait_for_termination()
+    bind_address = '[::]:50051'
+    try:
+        server.add_insecure_port(bind_address)
+        app_logger.info("Symmetric modular gRPC system operational and listening on target channel %s", bind_address)
+        server.start()
+    except Exception as e:
+        app_logger.critical("Failed to bind gRPC server on address %s: %s", bind_address, str(e), exc_info=True)
+        sys.exit(1)
+        
+    try:
+        server.wait_for_termination()
+    except KeyboardInterrupt:
+        app_logger.info("SIGINT/KeyboardInterrupt detected. Intercepting teardown signal.")
+    finally:
+        app_logger.info("Shutting down gRPC engine cleanly...")
+        server.stop(grace=5)
+        app_logger.info("gRPC server terminated safely.")
+
 
 if __name__ == '__main__':
     serve()
