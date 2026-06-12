@@ -55,13 +55,14 @@ python -m grpc_tools.protoc -I./proto --python_out=. --grpc_python_out=. ./proto
 ## 5. Execute Service Test Suite
 
 ```cmd
-python -m pytest app/services/
+python -m pytest tests/
 ```
 
 ## Optional: Run Tests with Detailed Console Logging
 
 ```cmd
 python -m pytest app/services/ -s -v
+python -m pytest tests/ -s -v
 ```
 
 # Running Tests in Containers
