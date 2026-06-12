@@ -27,7 +27,7 @@ The frontend UI is divided into 3 main parts:
 
 ### 1. Circulation Desk
 
-![Circulation Desk](./readme-img/ciculation-desk.png)
+![Circulation Desk](./readme-img/circulation-desk.png)
 
 A tab to issue (borrow) and return books for library patrons.
 
