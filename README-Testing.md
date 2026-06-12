@@ -61,7 +61,6 @@ python -m pytest tests/
 ## Optional: Run Tests with Detailed Console Logging
 
 ```cmd
-python -m pytest app/services/ -s -v
 python -m pytest tests/ -s -v
 ```
 
