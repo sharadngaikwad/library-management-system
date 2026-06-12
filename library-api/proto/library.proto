@@ -6,9 +6,11 @@ service LibraryService {
   rpc CreateBook (BookCreateRequest) returns (BookResponse);
   rpc UpdateBook (BookUpdateRequest) returns (BookResponse);
   rpc ListBooks (EmptyRequest) returns (ListBooksResponse);
+  
   rpc CreateMember (MemberCreateRequest) returns (MemberResponse);
   rpc UpdateMember (MemberUpdateRequest) returns (MemberResponse);
   rpc ListMembers (EmptyRequest) returns (ListMembersResponse);
+  
   rpc BorrowBook (BorrowRequest) returns (OperationResponse);
   rpc ReturnBook (ReturnRequest) returns (ReturnResponse);
   rpc ListActiveLoans (ListLoansRequest) returns (ListLoansResponse);
@@ -18,7 +20,8 @@ message BookCreateRequest {
   string title = 1;
   string author = 2;
   string isbn = 3;
-  int32 available_copies = 4;
+  int32 total_copies = 4;
+  int32 available_copies = 5;
 }
 
 message BookUpdateRequest {
@@ -26,7 +29,8 @@ message BookUpdateRequest {
   string title = 2;
   string author = 3;
   string isbn = 4;
-  int32 available_copies = 5;
+  int32 total_copies = 5;
+  int32 available_copies = 6;
 }
 
 message BookResponse {
@@ -34,7 +38,8 @@ message BookResponse {
   string title = 2;
   string author = 3;
   string isbn = 4;
-  int32 available_copies = 5;
+  int32 total_copies = 5;
+  int32 available_copies = 6;
 }
 
 message MemberCreateRequest {
@@ -44,10 +49,10 @@ message MemberCreateRequest {
 }
 
 message MemberUpdateRequest {
-    int32 id = 1;
-    string name = 2;
-    string email = 3;
-    string phone = 4;
+  int32 id = 1;
+  string name = 2;
+  string email = 3;
+  string phone = 4;
 }
 
 message MemberResponse {
@@ -93,9 +98,9 @@ message ListLoansResponse {
 message EmptyRequest {}
 
 message ListBooksResponse {
-    repeated BookResponse books = 1;
+  repeated BookResponse books = 1;
 }
 
 message ListMembersResponse {
-    repeated MemberResponse members = 1;
+  repeated MemberResponse members = 1;
 }

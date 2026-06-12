@@ -15,7 +15,7 @@ const client = new libraryProto.LibraryService(
   grpc.credentials.createInsecure()
 );
 
-export async function createBookAction(bookData: { title: string; author: string; isbn: string; available_copies: number }) {
+export async function createBookAction(bookData: { title: string; author: string; isbn: string; total_copies: number; available_copies: number }) {
   return new Promise((resolve, reject) => {
     client.CreateBook(bookData, (err: any, response: any) => {
       if (err) reject(new Error(err.details || 'Failed to create book record.'));
@@ -24,7 +24,7 @@ export async function createBookAction(bookData: { title: string; author: string
   });
 }
 
-export async function updateBookAction(bookData: { id: number; title: string; author: string; isbn: string; available_copies: number }) {
+export async function updateBookAction(bookData: { id: number; title: string; author: string; isbn: string; total_copies: number; available_copies: number }) {
   return new Promise((resolve, reject) => {
     client.UpdateBook(bookData, (err: any, response: any) => {
       if (err) reject(new Error(err.details || 'Failed to update book profile.'));
