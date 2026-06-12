@@ -82,9 +82,9 @@ def create_new_book(db, request, context):
         context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Title, Author, and ISBN elements are mandatory fields.")
 
     # 2. ISBN Format & Checksum Integrity Validation
-    # if not is_valid_isbn(isbn_clean):
-    #     app_logger.warning("Book creation rejected. Invalid ISBN checksum or sequence format: '%s'", isbn_clean)
-    #     context.abort(grpc.StatusCode.INVALID_ARGUMENT, "The provided value is not a valid ISBN-10 or ISBN-13 catalog sequence.")
+    if not is_valid_isbn(isbn_clean):
+        app_logger.warning("Book creation rejected. Invalid ISBN checksum or sequence format: '%s'", isbn_clean)
+        context.abort(grpc.StatusCode.INVALID_ARGUMENT, "The provided value is not a valid ISBN-10 or ISBN-13 catalog sequence.")
 
     if request.total_copies < 1:
         app_logger.warning("Book creation rejected: Invalid initial capacity requested (%d).", request.total_copies)
